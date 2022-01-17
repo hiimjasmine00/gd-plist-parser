@@ -124,13 +124,20 @@ function inputToPath(input) {
  * @param {string} keyword
  */
  function keywordExists(atlas, keyword) {
+    // The spritesheet data as a array of key/value arrays
     let entries = Object.entries(atlas.frames);
+    // If the keyword exists in the spritesheet
     let exists = entries.map(x => x[0]).includes(keyword);
+    // The actual keyword in the spritesheet
     let realName = exists ? keyword : "";
 
+    // Check if it doesn't exist
     if (!exists) {
-        for (let [fileName, sprite] of Object.entries(atlas.frames)) {
+        // It doesn't, so let's iterate through the entries
+        for (let [fileName, sprite] of entries) {
+            // Check if a sprite has the keyword in its aliases
             if (sprite.aliases.map(x => x.endsWith(".png") ? x : x + ".png").includes(keyword)) {
+                // It does, so let's set these variables and break out of this loop
                 exists = true;
                 realName = fileName;
                 break;
@@ -138,6 +145,7 @@ function inputToPath(input) {
         }
     }
 
+    // Return an object consisting of if the keyword exists, and the actual keyword if it does
     return { exists, realName };
 }
 

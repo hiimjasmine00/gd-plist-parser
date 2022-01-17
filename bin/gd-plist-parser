@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+
+// Import chalk
+const chalk = require("chalk");
+
+// Run CLI
+require("..")().catch(/** @param {Error} error */ error => {
+    // Whoops! We got an error!
+    console.error(chalk.red.bold("ERROR ") + error.message + (error.stack ? "\n" + chalk.gray(error.stack.split("\n").slice(1).join("\n")) : ""));
+    process.exit(1);
+});

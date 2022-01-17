@@ -37,40 +37,7 @@ let terminal = "";
  * @property {string} textureFileName
  */
 
-/**
- * We'll add some args for more versatility
- * @type {arg.Result<{
- *     "--help": BooleanConstructor,
- *     "--info": StringConstructor,
- *     "--json": BooleanConstructor,
- *     "--output": StringConstructor,
- *     "--save": StringConstructor,
- *     "-h": "--help",
- *     "-i": "--info",
- *     "-j": "--json",
- *     "-o": "--output",
- *     "-s": "--save"
- * }>}
- */
-let args;
-try {
-    args = arg({
-        "--help": Boolean,
-        "--info": String,
-        "--json": Boolean,
-        "--output": String,
-        "--save": String,
-        "-h": "--help",
-        "-i": "--info",
-        "-j": "--json",
-        "-o": "--output",
-        "-s": "--save"
-    });
-} catch (error) {
-    logError(error);
-}
-
-// Then we'll list fatal signals
+// We'll list fatal signals
 const signals = [
     "SIGABRT",
     "SIGALRM",
@@ -79,7 +46,7 @@ const signals = [
     "SIGTERM"
 ]
 
-// If it's not on windows, list these as well
+// If the user is not on windows, list these as well
 if (process.platform != "win32") {
     signals.push(
         "SIGVTALRM",
@@ -152,6 +119,29 @@ function inputToPath(input) {
 }
 
 /**
+ * Check if a keyword exists in the texture atlas
+ * @param {TextureAtlas} atlas
+ * @param {string} keyword
+ */
+ function keywordExists(atlas, keyword) {
+    let entries = Object.entries(atlas.frames);
+    let exists = entries.map(x => x[0]).includes(keyword);
+    let realName = exists ? keyword : "";
+
+    if (!exists) {
+        for (let [fileName, sprite] of Object.entries(atlas.frames)) {
+            if (sprite.aliases.map(x => x.endsWith(".png") ? x : x + ".png").includes(keyword)) {
+                exists = true;
+                realName = fileName;
+                break;
+            }
+        }
+    }
+
+    return { exists, realName };
+}
+
+/**
  * We don't want to clog the terminal, so we do this instead
  * @param {string} str
  */
@@ -172,7 +162,7 @@ function logError(error) {
  * The juicy part, saves all sprites of spritesheet to directory
  * @param {TextureAtlas} atlas
  * @param {string} resourcePath
- * @param {outDir} outDir
+ * @param {string} outDir
  */
 async function parseSheet(atlas, resourcePath, outDir) {
     // The number of saved sprites
@@ -183,17 +173,15 @@ async function parseSheet(atlas, resourcePath, outDir) {
     let entries = Object.entries(atlas.frames);
     // The longest sprite name's length
     let longest = Math.max(...entries.map(x => x[0].length));
-    // The directory to save the sprites in
-    let spritesDir = outDir ? outDir : path.join(process.cwd(), atlas.metadata.realTextureFileName.split(".").slice(0, -1).join("."));
 
     // Check if the directory actually exists
-    if (!fs.existsSync(spritesDir))
+    if (!fs.existsSync(outDir))
         // It doesn't, so let's make it ourselves
-        fs.mkdirSync(spritesDir);
-    else if (fs.statSync(spritesDir).isFile()) {
+        fs.mkdirSync(outDir);
+    else if (fs.statSync(outDir).isFile()) {
         // This user is trying to test us, not letting them get away with it
-        await trash(spritesDir);
-        fs.mkdirSync(spritesDir);
+        await trash(outDir);
+        fs.mkdirSync(outDir);
     }
 
     // Now let's iterate through the spritesheet data to save every sprite
@@ -203,6 +191,9 @@ async function parseSheet(atlas, resourcePath, outDir) {
 
         // Get x, y, w, h values, and then log basic sprite info
         let [ x, y, w, h ] = rectToArray(sprite.textureRect);
+        if (w < 1 || h < 1)
+            continue;
+
         terminal = 
                 fileName.padEnd(longest) +
                 " (x: " + x.toString().padStart(4) +
@@ -216,15 +207,15 @@ async function parseSheet(atlas, resourcePath, outDir) {
 
         // In case there are aliases, save those
         for (let alias of sprite.aliases)
-            await saveSprite(atlas, spritesheet, fileName, path.join(spritesDir, alias));
+            await saveSprite(atlas, spritesheet, fileName, path.join(outDir, alias));
 
         // Finally, we save the main sprite
-        await saveSprite(atlas, spritesheet, fileName, path.join(spritesDir, fileName));
+        await saveSprite(atlas, spritesheet, fileName, path.join(outDir, fileName));
     }
 
     // Inform the user that the task has is finished
     finished = true;
-    let finishedText = "Finished saving " + saved + " sprites from " + args._[0] + " in " + formatSeconds(elapsed, false) + ".";
+    let finishedText = "Finished saving " + saved + " sprites to " + outDir + " in " + formatSeconds(elapsed, false) + ".";
     log((finishedText.length < 53 + longest) ? finishedText.padEnd(53 + longest) : finishedText);
     console.log();
 }
@@ -267,6 +258,39 @@ module.exports = async function cli() {
         // They don't, so let's close the program
         return console.log("This program only works on Windows and MacOS!\nTry again when you are on Windows or MacOS.");
 
+    /**
+     * We'll add some args for more versatility
+     * @type {arg.Result<{
+     *     "--help": BooleanConstructor,
+     *     "--info": StringConstructor,
+     *     "--json": BooleanConstructor,
+     *     "--output": StringConstructor,
+     *     "--save": StringConstructor,
+     *     "-h": "--help",
+     *     "-i": "--info",
+     *     "-j": "--json",
+     *     "-o": "--output",
+     *     "-s": "--save"
+     * }>}
+     */
+    let args;
+    try {
+        args = arg({
+            "--help": Boolean,
+            "--info": String,
+            "--json": Boolean,
+            "--output": String,
+            "--save": String,
+            "-h": "--help",
+            "-i": "--info",
+            "-j": "--json",
+            "-o": "--output",
+            "-s": "--save"
+        });
+    } catch (error) {
+        logError(error);
+    }
+    
     // Let's check if the settings file exists
     let settingsFile = path.join(process.env[process.platform == "win32" ? "USERPROFILE" : "HOME"], "gd-plist-parser.json");
     if (!fs.existsSync(settingsFile))
@@ -340,13 +364,14 @@ module.exports = async function cli() {
     // Then we'll do the argument check (This is going to look like yandere code but whatever)
     if (args["--info"]) {
         // Check if keyword exists
-        if (!Object.keys(atlas.frames).includes(args["--info"]))
+        let exists = keywordExists(atlas, args["--info"]);
+        if (!exists.exists)
             // It doesn't...
             logError(new Error("Keyword does not exist in spritesheet"));
 
         // Log the info
         return console.log(
-            Object.entries(atlas.frames[args["--info"]])
+            Object.entries(atlas.frames[exists.realName])
             .filter(x => !Array.isArray(x[1]))
             .map(x => x[0][0].toUpperCase() + x[0].slice(1).split(/(?=[A-Z])/).join(" ") + ": " + (typeof x[1] == "boolean" ? x[1] ? "Yes" : "No" : x[1]))
             .join("\n")
@@ -373,7 +398,8 @@ module.exports = async function cli() {
         return console.log("JSON file written to " + output + ".");
     } else if (args["--save"]) {
         // Check if keyword exists
-        if (!Object.keys(atlas.frames).includes(args["--save"]))
+        let exists = keywordExists(atlas, args["--save"]);
+        if (!exists.exists)
             // It doesn't...
             logError(new Error("Keyword does not exist in spritesheet"));
 
@@ -394,7 +420,7 @@ module.exports = async function cli() {
         }
 
         // Save sprite then inform user that sprite has been saved
-        await saveSprite(atlas, fs.readFileSync(path.join(settings.resourcePath, atlas.metadata.realTextureFileName)), args["--save"], output);
+        await saveSprite(atlas, fs.readFileSync(path.join(settings.resourcePath, atlas.metadata.realTextureFileName)), exists.realName, output);
         return console.log("Sprite written to " + output + ".");
     } else {
         // Log the elapsed time

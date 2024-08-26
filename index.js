@@ -1,11 +1,16 @@
 // Import all these modules
-const fs = require("fs");
-const path = require("path");
-const arg = require("arg");
-const chalk = require("chalk");
-const plist = require("plist");
-const sharp = require("sharp");
-const trash = require("trash");
+import fs from "fs";
+import path from "path";
+import arg from "arg";
+import chalk from "chalk";
+import plist from "plist";
+import sharp from "sharp";
+import trash from "trash";
+
+// Hello! This is Justin from 2024 here. It's been two and a half years since I have touched
+// this code, and since Geometry Dash 2.2 has finally been released, I have decided to update
+// this to correct a few oversights I made when I was 13. It's crazy the amount of comments
+// I wrote, but they're quite helpful. Let's get started!
 
 // Elapsed seconds
 let elapsed = 0;
@@ -20,7 +25,6 @@ let terminal = "";
  * @property {Metadata} metadata
  *
  * @typedef Frame
- * @property {string[]} aliases
  * @property {string} spriteOffset
  * @property {string} spriteSize
  * @property {string} spriteSourceSize
@@ -100,7 +104,8 @@ function initSettings(settingsFile) {
         "Steam",
         "steamapps",
         "common",
-        process.platform == "darwin" ? "Geometry Dash.app" : "Geometry Dash"
+        "Geometry Dash",
+        process.platform == "darwin" ? "Geometry Dash.app" : ""
     );
     if (process.platform == "darwin")
         defaultPath = path.join(defaultPath, "Contents");
@@ -119,34 +124,29 @@ function inputToPath(input) {
 }
 
 /**
+ * Make the directory if it doesn't exist
+ * @param {string} directory 
+ */
+async function mkdir(directory) {
+    // Check if the directory actually exists
+    if (!fs.existsSync(directory))
+        // It doesn't, so let's make it ourselves
+        fs.mkdirSync(directory);
+    else if (fs.statSync(directory).isFile()) {
+        // This user must have tried to beat the system...
+        await trash(directory);
+        fs.mkdirSync(directory);
+    }
+}
+
+/**
  * Check if a keyword exists in the texture atlas
  * @param {TextureAtlas} atlas
  * @param {string} keyword
  */
  function keywordExists(atlas, keyword) {
-    // The spritesheet data as a array of key/value arrays
-    let entries = Object.entries(atlas.frames);
-    // If the keyword exists in the spritesheet
-    let exists = entries.map(x => x[0]).includes(keyword);
-    // The actual keyword in the spritesheet
-    let realName = exists ? keyword : "";
-
-    // Check if it doesn't exist
-    if (!exists) {
-        // It doesn't, so let's iterate through the entries
-        for (let [fileName, sprite] of entries) {
-            // Check if a sprite has the keyword in its aliases
-            if (sprite.aliases.map(x => x.endsWith(".png") ? x : x + ".png").includes(keyword)) {
-                // It does, so let's set these variables and break out of this loop
-                exists = true;
-                realName = fileName;
-                break;
-            }
-        }
-    }
-
-    // Return an object consisting of if the keyword exists, and the actual keyword if it does
-    return { exists, realName };
+    // Return a boolean that tells if the keyword exists
+    return Object.entries(atlas.frames).filter(x => x[0] == keyword).length > 0;
 }
 
 /**
@@ -182,23 +182,14 @@ async function parseSheet(atlas, resourcePath, outDir) {
     // The longest sprite name's length
     let longest = Math.max(...entries.map(x => x[0].length));
 
-    // Check if the directory actually exists
-    if (!fs.existsSync(outDir))
-        // It doesn't, so let's make it ourselves
-        fs.mkdirSync(outDir);
-    else if (fs.statSync(outDir).isFile()) {
-        // This user is trying to test us, not letting them get away with it
-        await trash(outDir);
-        fs.mkdirSync(outDir);
-    }
-
     // Now let's iterate through the spritesheet data to save every sprite
     for (let [fileName, sprite] of entries) {
         // Increment number of saved sprites
         saved++;
 
         // Get x, y, w, h values, and then log basic sprite info
-        let [ x, y, w, h ] = rectToArray(sprite.textureRect);
+        let [ x, y ] = rectToArray(sprite.textureRect);
+        let [ w, h ] = rectToArray(sprite.spriteSourceSize);
         if (w < 1 || h < 1)
             continue;
 
@@ -212,10 +203,6 @@ async function parseSheet(atlas, resourcePath, outDir) {
                 (saved + "/" + entries.length).padStart(entries.length.toString().length * 2 + 1);
 
         log(terminal + " " + formatSeconds(elapsed));
-
-        // In case there are aliases, save those
-        for (let alias of sprite.aliases)
-            await saveSprite(atlas, spritesheet, fileName, path.join(outDir, alias));
 
         // Finally, we save the main sprite
         await saveSprite(atlas, spritesheet, fileName, path.join(outDir, fileName));
@@ -246,21 +233,30 @@ function rectToArray(str) {
 async function saveSprite(atlas, spritesheet, keyword, outPath) {
     // Get sprite info, then get texture rect
     let sprite = atlas.frames[keyword];
+    let [ offsetX, offsetY ] = rectToArray(sprite.spriteOffset);
+    let [ width, height ] = rectToArray(sprite.spriteSourceSize);
     let [ x, y, w, h ] = rectToArray(sprite.textureRect);
 
-    // Save sprite
+    // Save sprite, making sure to respect the offset
     fs.writeFileSync(
         outPath, 
-        await sharp(spritesheet)
-        .extract({ left: x, top: y, width: sprite.textureRotated ? h : w, height: sprite.textureRotated ? w : h })
-        .rotate(sprite.textureRotated ? 270 : 0)
-        .png()
-        .toBuffer()
+        await sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+            .composite([{
+                input: await sharp(spritesheet)
+                    .extract({ left: x, top: y, width: sprite.textureRotated ? h : w, height: sprite.textureRotated ? w : h })
+                    .rotate(sprite.textureRotated ? 270 : 0)
+                    .png()
+                    .toBuffer(),
+                left: Math.round((width - w) / 2) + offsetX,
+                top: Math.round((height - h) / 2) - offsetY
+            }])
+            .png()
+            .toBuffer()
     );
 }
 
 // All the cli logic
-module.exports = async function cli() {
+export default async function cli() {
     // Check if the user has Windows or MacOS
     if (process.platform != "win32" && process.platform != "darwin")
         // They don't, so let's close the program
@@ -299,13 +295,13 @@ module.exports = async function cli() {
         logError(error);
     }
     
-    // Let's check if the settings file exists
+    // Let's check if the settings file exists, and if not, make the file
     let settingsFile = path.join(process.env[process.platform == "win32" ? "USERPROFILE" : "HOME"], "gd-plist-parser.json");
     if (!fs.existsSync(settingsFile))
         // No it doesn't, so let's make it ourselves
         initSettings(settingsFile);
     else if (fs.statSync(settingsFile).isDirectory()) {
-        // This user is trying to test us, not letting them get away with it
+        // This user must have tried to beat the system...
         await trash(settingsFile);
         initSettings(settingsFile);
     }
@@ -315,8 +311,8 @@ module.exports = async function cli() {
     try {
         settings = JSON.parse(fs.readFileSync(settingsFile).toString());
     } catch (error) {
-        // Malformed JSON...
-        logError(new Error("Malformed settings JSON"));
+        // The JSON is malformed, so we will now report the error and close the program.
+        logError(new Error("Malformed JSON in " + settingsFile + "."));
     }
 
     // If there are no args, display the help menu
@@ -372,14 +368,13 @@ module.exports = async function cli() {
     // Then we'll do the argument check (This is going to look like yandere code but whatever)
     if (args["--info"]) {
         // Check if keyword exists
-        let exists = keywordExists(atlas, args["--info"]);
-        if (!exists.exists)
+        if (Object.entries(atlas.frames).filter(x => x[0] == args["--info"]).length <= 0)
             // It doesn't...
             logError(new Error("Keyword does not exist in spritesheet"));
 
         // Log the info
         return console.log(
-            Object.entries(atlas.frames[exists.realName])
+            Object.entries(atlas.frames[args["--info"]])
             .filter(x => !Array.isArray(x[1]))
             .map(x => x[0][0].toUpperCase() + x[0].slice(1).split(/(?=[A-Z])/).join(" ") + ": " + (typeof x[1] == "boolean" ? x[1] ? "Yes" : "No" : x[1]))
             .join("\n")
@@ -390,24 +385,15 @@ module.exports = async function cli() {
         inputToPath(args["--output"].endsWith(".json") ? args["--output"] : path.join(args["--output"], args._[0].split(".").slice(0, -1).join(".") + ".json")) :
         path.join(process.cwd(), args._[0].split(".").slice(0, -1).join(".") + ".json");
 
-        // Let's check if the output directory exists
-        let outputDir = output.split(path.sep).slice(0, -1).join(path.sep);
-        if (!fs.existsSync(outputDir))
-            // It doesn't, so let's make it ourselves
-            fs.mkdirSync(outputDir);
-        else if (fs.statSync(outputDir).isFile()) {
-            // This user is trying to test us, not letting them get away with it
-            await trash(outputDir);
-            fs.mkdirSync(outputDir);
-        }
+        // Make the directory if it doesn't exist
+        await mkdir(output.split(path.sep).slice(0, -1).join(path.sep));
 
         // Save JSON file then inform user
         fs.writeFileSync(output, JSON.stringify(atlas, null, 4));
         return console.log("JSON file written to " + output + ".");
     } else if (args["--save"]) {
         // Check if keyword exists
-        let exists = keywordExists(atlas, args["--save"]);
-        if (!exists.exists)
+        if (!Object.entries(atlas.frames).filter(x => x[0] == args["--save"]).length <= 0)
             // It doesn't...
             logError(new Error("Keyword does not exist in spritesheet"));
 
@@ -416,19 +402,11 @@ module.exports = async function cli() {
         inputToPath(args["--output"].endsWith(".png") ? args["--output"] : path.join(args["--output"], args["--save"])) :
         path.join(process.cwd(), args["--save"]);
 
-        // Let's check if the output directory exists
-        let outputDir = output.split(path.sep).slice(0, -1).join(path.sep);
-        if (!fs.existsSync(outputDir))
-            // It doesn't, so let's make it ourselves
-            fs.mkdirSync(outputDir);
-        else if (fs.statSync(outputDir).isFile()) {
-            // This user is trying to test us, not letting them get away with it
-            await trash(outputDir);
-            fs.mkdirSync(outputDir);
-        }
+        // Make the directory if it doesn't exist
+        await mkdir(output.split(path.sep).slice(0, -1).join(path.sep));
 
         // Save sprite then inform user that sprite has been saved
-        await saveSprite(atlas, fs.readFileSync(path.join(settings.resourcePath, atlas.metadata.realTextureFileName)), exists.realName, output);
+        await saveSprite(atlas, fs.readFileSync(path.join(settings.resourcePath, atlas.metadata.realTextureFileName)),  args["--save"], output);
         return console.log("Sprite written to " + output + ".");
     } else {
         // Log the elapsed time
@@ -444,15 +422,8 @@ module.exports = async function cli() {
         inputToPath(args["--output"]) :
         path.join(process.cwd(), atlas.metadata.realTextureFileName.split(".").slice(0, -1).join("."));
 
-        // Let's check if the output directory exists
-        if (!fs.existsSync(output))
-            // It doesn't, so let's make it ourselves
-            fs.mkdirSync(output);
-        else if (fs.statSync(output).isFile()) {
-            // This user is trying to test us, not letting them get away with it
-            await trash(output);
-            fs.mkdirSync(output);
-        }
+        // Make the directory if it doesn't exist
+        await mkdir(output);
 
         // Log output directory
         console.log("Output directory: " + output);

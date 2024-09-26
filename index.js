@@ -140,16 +140,6 @@ async function mkdir(directory) {
 }
 
 /**
- * Check if a keyword exists in the texture atlas
- * @param {TextureAtlas} atlas
- * @param {string} keyword
- */
- function keywordExists(atlas, keyword) {
-    // Return a boolean that tells if the keyword exists
-    return Object.entries(atlas.frames).filter(x => x[0] == keyword).length > 0;
-}
-
-/**
  * We don't want to clog the terminal, so we do this instead
  * @param {string} str
  */
@@ -171,8 +161,9 @@ function logError(error) {
  * @param {TextureAtlas} atlas
  * @param {string} resourcePath
  * @param {string} outDir
+ * @param {boolean} compress
  */
-async function parseSheet(atlas, resourcePath, outDir) {
+async function parseSheet(atlas, resourcePath, outDir, compress) {
     // The number of saved sprites
     let saved = 0;
     // The spritesheet buffer, as we don't want to read it over and over again
@@ -205,7 +196,7 @@ async function parseSheet(atlas, resourcePath, outDir) {
         log(terminal + " " + formatSeconds(elapsed));
 
         // Finally, we save the main sprite
-        await saveSprite(atlas, spritesheet, fileName, path.join(outDir, fileName));
+        await saveSprite(atlas, spritesheet, fileName, path.join(outDir, fileName), compress);
     }
 
     // Inform the user that the task has is finished
@@ -229,8 +220,9 @@ function rectToArray(str) {
  * @param {Buffer} spritesheet
  * @param {string} keyword
  * @param {string} outDir
+ * @param {boolean} compress
  */
-async function saveSprite(atlas, spritesheet, keyword, outPath) {
+async function saveSprite(atlas, spritesheet, keyword, outPath, compress) {
     // Get sprite info, then get texture rect
     let sprite = atlas.frames[keyword];
     let [ offsetX, offsetY ] = rectToArray(sprite.spriteOffset);
@@ -240,15 +232,19 @@ async function saveSprite(atlas, spritesheet, keyword, outPath) {
     // Save sprite, making sure to respect the offset
     fs.writeFileSync(
         outPath, 
-        await sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-            .composite([{
+        await sharp({ create: {
+            width: compress ? w : width,
+            height: compress ? h : height,
+            channels: 4,
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+        } }).composite([{
                 input: await sharp(spritesheet)
                     .extract({ left: x, top: y, width: sprite.textureRotated ? h : w, height: sprite.textureRotated ? w : h })
                     .rotate(sprite.textureRotated ? 270 : 0)
                     .png()
                     .toBuffer(),
-                left: Math.round((width - w) / 2) + offsetX,
-                top: Math.round((height - h) / 2) - offsetY
+                left: compress ? 0 : Math.round((width - w) / 2) + offsetX,
+                top: compress ? 0 : Math.round((height - h) / 2) - offsetY
             }])
             .png()
             .toBuffer()
@@ -270,11 +266,13 @@ export default async function cli() {
      *     "--json": BooleanConstructor,
      *     "--output": StringConstructor,
      *     "--save": StringConstructor,
+     *     "--compress": BooleanConstructor,
      *     "-h": "--help",
      *     "-i": "--info",
      *     "-j": "--json",
      *     "-o": "--output",
-     *     "-s": "--save"
+     *     "-s": "--save",
+     *     "-c": "--compress"
      * }>}
      */
     let args;
@@ -285,11 +283,13 @@ export default async function cli() {
             "--json": Boolean,
             "--output": String,
             "--save": String,
+            "--compress": Boolean,
             "-h": "--help",
             "-i": "--info",
             "-j": "--json",
             "-o": "--output",
-            "-s": "--save"
+            "-s": "--save",
+            "-c": "--compress"
         });
     } catch (error) {
         logError(error);
@@ -333,6 +333,7 @@ export default async function cli() {
             "--json/-j:           Save the plist file as a crisp and beautiful JSON.\n" +
             "--output/-o (path):  Set the output path to save the file to.\n" +
             "--save/-s (keyword): Save the sprite corresponding to the given keyword.\n" +
+            "--compress/-c:       Compress the sprite to the sprite's size in the spritesheet.\n" +
             "\n" +
             "Settings Path: " + settingsFile + "\n" +
             "Geometry Dash Resource Path: " + settings.resourcePath
@@ -406,7 +407,7 @@ export default async function cli() {
         await mkdir(output.split(path.sep).slice(0, -1).join(path.sep));
 
         // Save sprite then inform user that sprite has been saved
-        await saveSprite(atlas, fs.readFileSync(path.join(settings.resourcePath, atlas.metadata.realTextureFileName)),  args["--save"], output);
+        await saveSprite(atlas, fs.readFileSync(path.join(settings.resourcePath, atlas.metadata.realTextureFileName)),  args["--save"], output, args["--compress"]);
         return console.log("Sprite written to " + output + ".");
     } else {
         // Log the elapsed time
@@ -429,6 +430,6 @@ export default async function cli() {
         console.log("Output directory: " + output);
 
         // Save all sprites
-        await parseSheet(atlas, settings.resourcePath, output);
+        await parseSheet(atlas, settings.resourcePath, output, args["--compress"]);
     }
 }

@@ -22,6 +22,7 @@ Options:
 --json/-j:           Save the plist file as a crisp and beautiful JSON.
 --output/-o (path):  Set the output path to save the file to.
 --save/-s (keyword): Save the sprite corresponding to the given keyword.
+--compress/-c:       Compress the sprite to the sprite's size in the spritesheet.
 ```
 
 # License

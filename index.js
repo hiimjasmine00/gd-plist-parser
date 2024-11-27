@@ -230,11 +230,13 @@ async function saveSprite(atlas, spritesheet, keyword, outPath, compress) {
     let [ x, y, w, h ] = rectToArray(sprite.textureRect);
 
     // Save sprite, making sure to respect the offset
+    let absoluteWidth = !compress && width >= w;
+    let absoluteHeight = !compress && height >= h;
     fs.writeFileSync(
         outPath, 
         await sharp({ create: {
-            width: compress ? w : width,
-            height: compress ? h : height,
+            width: absoluteWidth ? width : w,
+            height: absoluteHeight ? height : h,
             channels: 4,
             background: { r: 0, g: 0, b: 0, alpha: 0 }
         } }).composite([{
@@ -243,8 +245,8 @@ async function saveSprite(atlas, spritesheet, keyword, outPath, compress) {
                     .rotate(sprite.textureRotated ? 270 : 0)
                     .png()
                     .toBuffer(),
-                left: compress ? 0 : Math.round((width - w) / 2) + offsetX,
-                top: compress ? 0 : Math.round((height - h) / 2) - offsetY
+                left: absoluteWidth ? Math.round((width - w) / 2) + offsetX : 0,
+                top: absoluteHeight ? Math.round((height - h) / 2) - offsetY : 0
             }])
             .png()
             .toBuffer()
@@ -394,7 +396,7 @@ export default async function cli() {
         return console.log("JSON file written to " + output + ".");
     } else if (args["--save"]) {
         // Check if keyword exists
-        if (!Object.entries(atlas.frames).filter(x => x[0] == args["--save"]).length <= 0)
+        if (Object.entries(atlas.frames).filter(x => x[0] == args["--save"]).length <= 0)
             // It doesn't...
             logError(new Error("Keyword does not exist in spritesheet"));
 

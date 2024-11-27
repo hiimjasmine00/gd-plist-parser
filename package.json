@@ -1,6 +1,6 @@
 {
     "name": "gd-plist-parser",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "description": "CLI that parses property list files linking Geometry Dash spritesheets.",
     "bin": {
         "gd-plist-parser": "bin/gd-plist-parser"

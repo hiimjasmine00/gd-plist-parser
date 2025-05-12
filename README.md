@@ -3,7 +3,7 @@ CLI that parses property list files linking Geometry Dash spritesheets.
 
 # Features
 Geometry Dash PLIST Parser property list files linking Geometry Dash spritesheets to show information in a variety of ways,
-whether it be a JSON, sprite info, saving a sprite, or saving all sprites. The resource path is customizable from your user profile directory.
+whether it be a JSON, sprite info, saving a sprite, or saving all sprites.
 
 ```
 > gd-plist-parser

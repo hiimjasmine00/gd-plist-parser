@@ -5,7 +5,6 @@ import arg from "arg";
 import chalk from "chalk";
 import plist from "plist";
 import sharp from "sharp";
-import trash from "trash";
 
 // Hello! This is Justin from 2024 here. It's been two and a half years since I have touched
 // this code, and since Geometry Dash 2.2 has finally been released, I have decided to update
@@ -83,39 +82,6 @@ function formatSeconds(sec, colon = true) {
 }
 
 /**
- * Initialize the default settings if the settings don't exist
- * @param {string} settingsFile
- */
-function initSettings(settingsFile) {
-    // Get location of Steam
-    let defaultPath = "";
-    switch (process.platform) {
-        case "win32":
-            defaultPath = process.arch.endsWith("64") ? process.env["ProgramFiles(x86)"] : process.env.ProgramFiles;
-            break;
-        case "darwin":
-            defaultPath = path.join(process.env.HOME, "Library", "Application Support");
-            break;
-    }
-
-    // Add the rest of the path
-    defaultPath = path.join(
-        defaultPath,
-        "Steam",
-        "steamapps",
-        "common",
-        "Geometry Dash",
-        process.platform == "darwin" ? "Geometry Dash.app" : ""
-    );
-    if (process.platform == "darwin")
-        defaultPath = path.join(defaultPath, "Contents");
-    defaultPath = path.join(defaultPath, "Resources");
-
-    // Save settings
-    fs.writeFileSync(settingsFile, "{\n    \"resourcePath\": \"" + defaultPath.replace(/\\/g, "\\\\") + "\"\n}");
-}
-
-/**
  * Turns input into a path.
  * @param {string} input
  */
@@ -134,7 +100,7 @@ async function mkdir(directory) {
         fs.mkdirSync(directory);
     else if (fs.statSync(directory).isFile()) {
         // This user must have tried to beat the system...
-        await trash(directory);
+        fs.rmSync(directory);
         fs.mkdirSync(directory);
     }
 }
@@ -159,15 +125,15 @@ function logError(error) {
 /**
  * The juicy part, saves all sprites of spritesheet to directory
  * @param {TextureAtlas} atlas
- * @param {string} resourcePath
+ * @param {string} texturePath
  * @param {string} outDir
  * @param {boolean} compress
  */
-async function parseSheet(atlas, resourcePath, outDir, compress) {
+async function parseSheet(atlas, texturePath, outDir, compress) {
     // The number of saved sprites
     let saved = 0;
     // The spritesheet buffer, as we don't want to read it over and over again
-    let spritesheet = fs.readFileSync(path.join(resourcePath, atlas.metadata.realTextureFileName));
+    let spritesheet = fs.readFileSync(texturePath);
     // The spritesheet data as a array of key/value arrays
     let entries = Object.entries(atlas.frames);
     // The longest sprite name's length
@@ -255,11 +221,6 @@ async function saveSprite(atlas, spritesheet, keyword, outPath, compress) {
 
 // All the cli logic
 export default async function cli() {
-    // Check if the user has Windows or MacOS
-    if (process.platform != "win32" && process.platform != "darwin")
-        // They don't, so let's close the program
-        return console.log("This program only works on Windows and MacOS!\nTry again when you are on Windows or MacOS.");
-
     /**
      * We'll add some args for more versatility
      * @type {arg.Result<{
@@ -296,26 +257,6 @@ export default async function cli() {
     } catch (error) {
         logError(error);
     }
-    
-    // Let's check if the settings file exists, and if not, make the file
-    let settingsFile = path.join(process.env[process.platform == "win32" ? "USERPROFILE" : "HOME"], "gd-plist-parser.json");
-    if (!fs.existsSync(settingsFile))
-        // No it doesn't, so let's make it ourselves
-        initSettings(settingsFile);
-    else if (fs.statSync(settingsFile).isDirectory()) {
-        // This user must have tried to beat the system...
-        await trash(settingsFile);
-        initSettings(settingsFile);
-    }
-
-    // Then we're sure it exists, so we'll parse the settings
-    let settings = { resourcePath: "" };
-    try {
-        settings = JSON.parse(fs.readFileSync(settingsFile).toString());
-    } catch (error) {
-        // The JSON is malformed, so we will now report the error and close the program.
-        logError(new Error("Malformed JSON in " + settingsFile + "."));
-    }
 
     // If there are no args, display the help menu
     if (!process.argv[2] || args["--help"]) {
@@ -335,10 +276,7 @@ export default async function cli() {
             "--json/-j:           Save the plist file as a crisp and beautiful JSON.\n" +
             "--output/-o (path):  Set the output path to save the file to.\n" +
             "--save/-s (keyword): Save the sprite corresponding to the given keyword.\n" +
-            "--compress/-c:       Compress the sprite to the sprite's size in the spritesheet.\n" +
-            "\n" +
-            "Settings Path: " + settingsFile + "\n" +
-            "Geometry Dash Resource Path: " + settings.resourcePath
+            "--compress/-c:       Compress the sprite to the sprite's size in the spritesheet.\n"
         );
     }
 
@@ -351,7 +289,7 @@ export default async function cli() {
     }
 
     // And then we'll check if the plist actually exists
-    let plistPath = path.join(settings.resourcePath, args._[0]);
+    let plistPath = path.resolve(process.cwd(), args._[0]);
     if (!fs.existsSync(plistPath) || fs.statSync(plistPath).isDirectory())
         // It doesn't...
         logError(new Error("Nonexistent PLIST document"));
@@ -386,7 +324,7 @@ export default async function cli() {
         // Locate where we want to place the JSON file
         let output = args["--output"] ?
         inputToPath(args["--output"].endsWith(".json") ? args["--output"] : path.join(args["--output"], args._[0].split(".").slice(0, -1).join(".") + ".json")) :
-        path.join(process.cwd(), args._[0].split(".").slice(0, -1).join(".") + ".json");
+        path.resolve(process.cwd(), args._[0].split(".").slice(0, -1).join(".") + ".json");
 
         // Make the directory if it doesn't exist
         await mkdir(output.split(path.sep).slice(0, -1).join(path.sep));
@@ -403,13 +341,13 @@ export default async function cli() {
         // Locate where we want to place the sprite
         let output = args["--output"] ?
         inputToPath(args["--output"].endsWith(".png") ? args["--output"] : path.join(args["--output"], args["--save"])) :
-        path.join(process.cwd(), args["--save"]);
+        path.resolve(process.cwd(), args["--save"]);
 
         // Make the directory if it doesn't exist
         await mkdir(output.split(path.sep).slice(0, -1).join(path.sep));
 
         // Save sprite then inform user that sprite has been saved
-        await saveSprite(atlas, fs.readFileSync(path.join(settings.resourcePath, atlas.metadata.realTextureFileName)),  args["--save"], output, args["--compress"]);
+        await saveSprite(atlas, fs.readFileSync(plistPath.split(".").slice(0, -1).join(".") + ".png"),  args["--save"], output, args["--compress"]);
         return console.log("Sprite written to " + output + ".");
     } else {
         // Log the elapsed time
@@ -421,9 +359,8 @@ export default async function cli() {
         }, 1000);
 
         // Locate where we want to place the sprites
-        let output = args["--output"] ?
-        inputToPath(args["--output"]) :
-        path.join(process.cwd(), atlas.metadata.realTextureFileName.split(".").slice(0, -1).join("."));
+        let texturePath = path.resolve(process.cwd(), plistPath.split(".").slice(0, -1).join("."));
+        let output = args["--output"] ? inputToPath(args["--output"]) : texturePath
 
         // Make the directory if it doesn't exist
         await mkdir(output);
@@ -432,6 +369,6 @@ export default async function cli() {
         console.log("Output directory: " + output);
 
         // Save all sprites
-        await parseSheet(atlas, settings.resourcePath, output, args["--compress"]);
+        await parseSheet(atlas, texturePath + ".png", output, args["--compress"]);
     }
 }
